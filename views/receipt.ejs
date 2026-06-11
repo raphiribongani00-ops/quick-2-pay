@@ -1,0 +1,62 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Payment Receipt - Quick 2 Pay</title>
+    <script src="https://cdn.tailwindcss.com"></script>
+</head>
+<body class="bg-black text-white">
+    <div class="container mx-auto max-w-md p-4 text-center">
+        <div id="statusBanner" class="p-4 rounded-lg mb-4">
+            <!-- dynamic status -->
+        </div>
+        <div class="bg-gray-900 p-4 rounded-lg mb-4">
+            <h2 class="font-bold mb-2">Items Paid</h2>
+            <div id="itemsList" class="text-left text-sm space-y-2"></div>
+            <div class="border-t border-gray-700 mt-2 pt-2 font-bold">Total: <span id="totalPaid"></span></div>
+        </div>
+        <button id="showQrBtn" class="bg-yellow-500 text-black px-6 py-2 rounded-lg font-semibold">Show Payment Verification QR</button>
+        <div id="qrContainer" class="hidden mt-4"></div>
+        <div class="mt-6"><a href="/customer/dashboard" class="text-yellow-400">← Back to Dashboard</a></div>
+    </div>
+    <script>
+        const transactionId = window.location.pathname.split('/').pop();
+        fetch(`/customer/api/transaction/${transactionId}`).then(res=>res.json()).then(data=>{
+            const transaction = data.transaction;
+            const items = data.items;
+            const total = transaction.total_cents;
+            document.getElementById('totalPaid').innerText = `$${(total/100).toFixed(2)}`;
+            document.getElementById('itemsList').innerHTML = items.map(i => `
+                <div class="flex items-center gap-3 bg-gray-800 p-2 rounded">
+                    ${i.image_url ? `<img src="${i.image_url}" class="w-10 h-10 object-cover rounded">` : '<div class="w-10 h-10 bg-gray-700 rounded"></div>'}
+                    <div>${i.name} x${i.quantity} @ $${(i.price_cents/100).toFixed(2)} = $${(i.price_cents * i.quantity / 100).toFixed(2)}</div>
+                </div>
+            `).join('');
+            const statusBanner = document.getElementById('statusBanner');
+            if (transaction.status === 'paid') {
+                statusBanner.innerHTML = `<div class="bg-green-800 p-2 rounded"><h1 class="text-xl font-bold">Payment Successful</h1><p class="text-sm">Transaction ID: ${transaction.id}</p><p class="text-sm">Status: Paid (awaiting merchant confirmation)</p></div>`;
+            } else if (transaction.status === 'completed') {
+                statusBanner.innerHTML = `<div class="bg-blue-800 p-2 rounded"><h1 class="text-xl font-bold">Payment Completed</h1><p class="text-sm">Transaction ID: ${transaction.id}</p><p class="text-sm">Status: Released by merchant</p></div>`;
+            } else {
+                statusBanner.innerHTML = `<div class="bg-yellow-800 p-2 rounded"><h1 class="text-xl font-bold">Payment Record</h1><p class="text-sm">Transaction ID: ${transaction.id}</p><p class="text-sm">Status: ${transaction.status}</p></div>`;
+            }
+        });
+        document.getElementById('showQrBtn').addEventListener('click', () => {
+            const qrContainer = document.getElementById('qrContainer');
+            if (qrContainer.classList.contains('hidden')) {
+                qrContainer.classList.remove('hidden');
+                qrContainer.innerHTML = '';
+                const qrImg = document.createElement('img');
+                qrImg.src = `https://api.qrserver.com/v1/create-qr-code/?size=200x200&data=${encodeURIComponent(transactionId)}`;
+                qrImg.alt = 'Verification QR';
+                qrContainer.appendChild(qrImg);
+                document.getElementById('showQrBtn').innerText = 'Hide QR Code';
+            } else {
+                qrContainer.classList.add('hidden');
+                document.getElementById('showQrBtn').innerText = 'Show Payment Verification QR';
+            }
+        });
+    </script>
+</body>
+</html>

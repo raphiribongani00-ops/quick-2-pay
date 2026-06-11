@@ -1,0 +1,526 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0, user-scalable=yes">
+    <title>Quick 2 Pay - Merchant</title>
+    <script src="https://cdn.tailwindcss.com"></script>
+    <script src="https://unpkg.com/html5-qrcode@2.3.8/html5-qrcode.min.js"></script>
+    <style>
+        .bottom-nav a.active { background-color: #eab308; color: black; }
+        .camera-scanner { width: 100%; max-width: 500px; margin: 0 auto; }
+        .modal {
+            position: fixed;
+            top: 0;
+            left: 0;
+            right: 0;
+            bottom: 0;
+            background: rgba(0,0,0,0.8);
+            display: flex;
+            align-items: center;
+            justify-content: center;
+            z-index: 50;
+        }
+        .modal-content {
+            max-height: 80vh;
+            overflow-y: auto;
+            width: 90%;
+            max-width: 500px;
+        }
+    </style>
+</head>
+<body class="bg-black text-white pb-20">
+    <div class="container mx-auto max-w-md p-4">
+        <div class="flex justify-between items-center mb-4">
+            <h1 class="text-2xl font-bold text-yellow-400">Quick 2 Pay</h1>
+            <a href="/merchant/logout" class="text-sm bg-gray-800 px-3 py-1 rounded">Logout</a>
+        </div>
+        <div id="mainContent" class="bg-gray-900 rounded-lg p-4 min-h-[400px]"></div>
+    </div>
+
+    <!-- Bottom Navigation -->
+    <div class="fixed bottom-0 left-0 right-0 bg-gray-800 border-t border-gray-700">
+        <div class="flex justify-around max-w-md mx-auto">
+            <button data-tab="qr" class="tab-btn flex flex-col items-center py-2 px-4 text-gray-400">
+                <svg class="w-6 h-6" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M12 4v1m6 11h2m-6 0h-2v4m0-11v3m0 0h.01M12 12h4.01M16 20h4M4 12h4m12 0h.01M5 8h2a1 1 0 001-1V5a1 1 0 00-1-1H5a1 1 0 00-1 1v2a1 1 0 001 1zm12 0h2a1 1 0 001-1V5a1 1 0 00-1-1h-2a1 1 0 00-1 1v2a1 1 0 001 1zM5 20h2a1 1 0 001-1v-2a1 1 0 00-1-1H5a1 1 0 00-1 1v2a1 1 0 001 1z"></path></svg>
+                <span class="text-xs">QR</span>
+            </button>
+            <button data-tab="verify" class="tab-btn flex flex-col items-center py-2 px-4 text-gray-400">
+                <svg class="w-6 h-6" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M9 12l2 2 4-4m6 2a9 9 0 11-18 0 9 9 0 0118 0z"></path></svg>
+                <span class="text-xs">Verify</span>
+            </button>
+            <button data-tab="products" class="tab-btn flex flex-col items-center py-2 px-4 text-gray-400">
+                <svg class="w-6 h-6" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M20 7l-8-4-8 4m16 0v10l-8 4-8-4V7m8 4v10"></path></svg>
+                <span class="text-xs">Products</span>
+            </button>
+            <button data-tab="reports" class="tab-btn flex flex-col items-center py-2 px-4 text-gray-400">
+                <svg class="w-6 h-6" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M9 19v-6a2 2 0 00-2-2H5a2 2 0 00-2 2v6a2 2 0 002 2h2a2 2 0 002-2zm0 0V9a2 2 0 012-2h2a2 2 0 012 2v10m-6 0a2 2 0 002 2h2a2 2 0 002-2m0 0V5a2 2 0 012-2h2a2 2 0 012 2v14a2 2 0 01-2 2h-2a2 2 0 01-2-2z"></path></svg>
+                <span class="text-xs">Reports</span>
+            </button>
+        </div>
+    </div>
+
+    <script>
+        let currentTab = 'qr';
+        let merchantInfo = {};
+
+        fetch('/merchant/api/info').then(res=>res.json()).then(data => { merchantInfo = data; if(currentTab === 'qr') loadQR(); });
+
+        function loadQR() {
+            document.getElementById('mainContent').innerHTML = `
+                <div class="text-center">
+                    <h2 class="font-bold text-yellow-400 mb-2">Your Store QR Code</h2>
+                    <p class="text-sm text-gray-400 mb-2">${merchantInfo.storeName}</p>
+                    <div id="qrCodeImg" class="flex justify-center"></div>
+                    <div class="mt-4 flex gap-2 justify-center">
+                        <button id="downloadQrBtn" class="bg-yellow-500 text-black px-4 py-2 rounded text-sm">Download QR Code</button>
+                        <button id="shareQrBtn" class="bg-gray-700 px-4 py-2 rounded text-sm">Share QR Code</button>
+                    </div>
+                    <p class="text-xs text-gray-500 mt-4">Customers scan this to pay you</p>
+                </div>
+            `;
+            const qrData = merchantInfo.storeQrCode;
+            const qrImgUrl = `https://api.qrserver.com/v1/create-qr-code/?size=200x200&data=${encodeURIComponent(qrData)}`;
+            document.getElementById('qrCodeImg').innerHTML = `<img id="storeQrImage" src="${qrImgUrl}" alt="Store QR">`;
+            document.getElementById('downloadQrBtn').addEventListener('click', () => {
+                const link = document.createElement('a');
+                link.href = qrImgUrl;
+                link.download = `qr_${merchantInfo.storeName}.png`;
+                link.click();
+            });
+            document.getElementById('shareQrBtn').addEventListener('click', async () => {
+                if (navigator.share) {
+                    const response = await fetch(qrImgUrl);
+                    const blob = await response.blob();
+                    const file = new File([blob], 'qr_code.png', { type: 'image/png' });
+                    await navigator.share({ title: 'Quick 2 Pay Store QR', text: `Scan to pay at ${merchantInfo.storeName}`, files: [file] }).catch(()=>{});
+                } else {
+                    navigator.clipboard.writeText(qrData);
+                    alert('Store QR code (text) copied to clipboard. Share this with your customers.');
+                }
+            });
+        }
+
+        function loadVerify() {
+            document.getElementById('mainContent').innerHTML = `
+                <div>
+                    <h2 class="font-bold text-yellow-400 mb-2">Scan Customer Payment QR</h2>
+                    <div id="verifyScanner" style="width:100%; height:300px;" class="bg-gray-800 rounded"></div>
+                    <div id="verifyResult" class="mt-4 text-sm"></div>
+                </div>
+            `;
+            const html5QrCode = new Html5Qrcode("verifyScanner");
+            html5QrCode.start({ facingMode: "environment" }, { fps: 10, qrbox: 250 }, (decodedText) => {
+                fetch('/merchant/api/verify-payment', {
+                    method: 'POST',
+                    headers: { 'Content-Type': 'application/json' },
+                    body: JSON.stringify({ transactionId: decodedText })
+                })
+                .then(res => res.json())
+                .then(data => {
+                    if (data.success) {
+                        let itemsHtml = data.items.map(i => `
+                            <div class="flex items-center gap-3 mb-2">
+                                ${i.image_url ? `<img src="${i.image_url}" class="w-10 h-10 object-cover rounded">` : '<div class="w-10 h-10 bg-gray-700 rounded"></div>'}
+                                <div>${i.name} x${i.quantity} = R${(i.price_cents*i.quantity/100).toFixed(2)}</div>
+                            </div>
+                        `).join('');
+                        document.getElementById('verifyResult').innerHTML = `
+                            <div class="bg-green-900 p-3 rounded">
+                                <p class="font-bold">Transaction: ${data.transaction.id}</p>
+                                <p>Total: R${(data.transaction.total_cents/100).toFixed(2)}</p>
+                                <div class="mt-2">${itemsHtml}</div>
+                                <button id="confirmReleaseBtn" class="mt-3 bg-yellow-500 text-black px-4 py-2 rounded">Confirm & Release Customer</button>
+                            </div>
+                        `;
+                        document.getElementById('confirmReleaseBtn').addEventListener('click', () => {
+                            fetch('/merchant/api/confirm-release', {
+                                method: 'POST',
+                                headers: { 'Content-Type': 'application/json' },
+                                body: JSON.stringify({ transactionId: data.transaction.id })
+                            }).then(r=>r.json()).then(res=>{
+                                if(res.success) alert('Customer released. Transaction completed.');
+                                else alert('Error confirming');
+                                html5QrCode.stop();
+                                loadVerify();
+                            });
+                        });
+                    } else {
+                        document.getElementById('verifyResult').innerHTML = `<div class="bg-red-900 p-3 rounded text-white font-semibold">${data.message || 'Invalid or already verified QR'}</div>`;
+                        setTimeout(() => document.getElementById('verifyResult').innerHTML = '', 3000);
+                    }
+                });
+            }).catch(err => console.error(err));
+        }
+
+        async function loadProducts() {
+            const [standardRes, customRes] = await Promise.all([
+                fetch('/merchant/api/products'),
+                fetch('/merchant/api/custom-products')
+            ]);
+            const standardProducts = await standardRes.json();
+            const customProducts = await customRes.json();
+
+            const standardHtml = standardProducts.map(p => `
+                <div class="bg-gray-800 p-3 rounded mb-2">
+                    <div class="flex items-center gap-3">
+                        ${p.image_url ? `<img src="${p.image_url}" class="w-10 h-10 object-cover rounded">` : '<div class="w-10 h-10 bg-gray-700 rounded"></div>'}
+                        <div class="flex-1">
+                            <span class="font-mono text-xs">${p.barcode}</span><br>
+                            ${p.name}<br>
+                            <span class="text-yellow-400">R${(p.price/100).toFixed(2)}</span> | Stock: ${p.stock}
+                        </div>
+                        <div class="flex flex-col gap-1">
+                            <button class="edit-price bg-blue-700 px-2 py-1 rounded text-xs" data-barcode="${p.barcode}" data-current-price="${p.price}" data-stock="${p.stock}">Edit Price</button>
+                            <button class="delete-product bg-red-700 px-2 py-1 rounded text-xs" data-barcode="${p.barcode}">Delete</button>
+                        </div>
+                    </div>
+                </div>
+            `).join('');
+
+            const customHtml = customProducts.map(c => `
+                <div class="bg-gray-800 p-3 rounded mb-2">
+                    <div class="flex items-center gap-3">
+                        ${c.image_url ? `<img src="${c.image_url}" class="w-10 h-10 object-cover rounded">` : '<div class="w-10 h-10 bg-gray-700 rounded"></div>'}
+                        <div class="flex-1">
+                            <div class="font-semibold">${c.name}</div>
+                            <div class="text-xs text-gray-400">${c.description || 'No description'}</div>
+                            <span class="text-yellow-400">R${(c.price_cents/100).toFixed(2)}</span>
+                        </div>
+                        <div class="flex flex-col gap-1">
+                            <button class="download-custom-qr bg-blue-700 px-2 py-1 rounded text-xs" data-token="${c.qr_code_token}" data-name="${c.name}">Download QR</button>
+                            <button class="copy-custom-token bg-green-700 px-2 py-1 rounded text-xs" data-token="${c.qr_code_token}">Copy Token</button>
+                            <button class="edit-custom bg-yellow-700 px-2 py-1 rounded text-xs" data-id="${c.id}" data-name="${c.name}" data-desc="${c.description || ''}" data-price="${c.price_cents}" data-image="${c.image_url || ''}">Edit</button>
+                            <button class="delete-custom bg-red-700 px-2 py-1 rounded text-xs" data-id="${c.id}">Delete</button>
+                        </div>
+                    </div>
+                </div>
+            `).join('');
+
+            document.getElementById('mainContent').innerHTML = `
+                <div>
+                    <h2 class="font-bold text-yellow-400 mb-2">Manage Products</h2>
+                    <div class="bg-gray-800 p-3 rounded mb-4">
+                        <h3 class="font-semibold mb-2">Standard Products (barcode)</h3>
+                        <div class="flex gap-2 mb-2">
+                            <input type="text" id="searchProduct" placeholder="Search by barcode or name" class="flex-1 bg-gray-700 p-2 rounded">
+                            <button id="searchGlobalBtn" class="bg-gray-600 px-3 py-2 rounded">Search</button>
+                            <button id="browseCatalogBtn" class="bg-yellow-600 text-black px-3 py-2 rounded">Browse Catalog</button>
+                        </div>
+                        <div id="searchResults" class="space-y-2 max-h-40 overflow-y-auto hidden"></div>
+                        <div id="addProductForm" class="hidden mt-3">
+                            <div id="selectedProductPreview" class="flex items-center gap-2 mb-2"></div>
+                            <input type="hidden" id="selectedBarcode">
+                            <label class="block text-sm">Price (in Rands, e.g., 14.99):</label>
+                            <input type="number" step="0.01" id="newPriceRand" placeholder="Price in Rands" class="w-full bg-gray-700 p-2 rounded mb-2">
+                            <button id="confirmAddBtn" class="bg-yellow-500 text-black px-4 py-2 rounded w-full">Add Product to Store</button>
+                        </div>
+                        <div id="productList">${standardHtml || '<p class="text-gray-500">No standard products yet</p>'}</div>
+                    </div>
+                    <div class="bg-gray-800 p-3 rounded">
+                        <h3 class="font-semibold mb-2">Custom Products / Services (with QR code)</h3>
+                        <div class="bg-gray-700 p-2 rounded mb-3">
+                            <input type="text" id="customName" placeholder="Name (e.g., Car Wash)" class="w-full mb-2 p-2 rounded bg-gray-600">
+                            <input type="text" id="customDesc" placeholder="Description (optional)" class="w-full mb-2 p-2 rounded bg-gray-600">
+                            <input type="number" step="0.01" id="customPriceRand" placeholder="Price in Rands" class="w-full mb-2 p-2 rounded bg-gray-600">
+                            <input type="text" id="customImage" placeholder="Image URL (optional)" class="w-full mb-2 p-2 rounded bg-gray-600">
+                            <button id="createCustomBtn" class="bg-yellow-500 text-black px-4 py-2 rounded w-full">Create Custom Product</button>
+                        </div>
+                        <div id="customProductList">${customHtml || '<p class="text-gray-500">No custom products yet</p>'}</div>
+                    </div>
+                </div>
+            `;
+
+            attachStandardHandlers();
+            attachCustomHandlers();
+        }
+
+        function attachStandardHandlers() {
+            document.querySelectorAll('.delete-product').forEach(btn => {
+                btn.addEventListener('click', () => {
+                    const barcode = btn.dataset.barcode;
+                    if(confirm('Remove this product from your store?')) {
+                        fetch(`/merchant/api/product/${barcode}`, { method: 'DELETE' }).then(()=> loadProducts());
+                    }
+                });
+            });
+            document.querySelectorAll('.edit-price').forEach(btn => {
+                btn.addEventListener('click', () => {
+                    const barcode = btn.dataset.barcode;
+                    const currentPriceCents = parseInt(btn.dataset.currentPrice);
+                    const stock = parseInt(btn.dataset.stock);
+                    const currentRand = (currentPriceCents/100).toFixed(2);
+                    const newPriceRand = prompt(`Edit price for ${barcode}. Current: R${currentRand}. Enter new price in Rands:`, currentRand);
+                    if (newPriceRand && !isNaN(parseFloat(newPriceRand))) {
+                        const newPriceCents = Math.round(parseFloat(newPriceRand) * 100);
+                        fetch('/merchant/api/product', {
+                            method: 'POST',
+                            headers: { 'Content-Type': 'application/json' },
+                            body: JSON.stringify({ barcode, price: newPriceCents, stock: stock })
+                        }).then(() => loadProducts());
+                    }
+                });
+            });
+            document.getElementById('searchGlobalBtn').addEventListener('click', () => {
+                const query = document.getElementById('searchProduct').value.trim();
+                if(!query) return;
+                fetch(`/merchant/api/search-global?q=${encodeURIComponent(query)}`)
+                .then(res=>res.json())
+                .then(results => {
+                    const resultsDiv = document.getElementById('searchResults');
+                    const addForm = document.getElementById('addProductForm');
+                    if(results.length === 0) {
+                        resultsDiv.innerHTML = '<div class="text-gray-500">No products found in global catalog</div>';
+                        resultsDiv.classList.remove('hidden');
+                        addForm.classList.add('hidden');
+                        return;
+                    }
+                    resultsDiv.innerHTML = results.map(p => `
+                        <div class="bg-gray-700 p-2 rounded flex justify-between items-center cursor-pointer select-product" data-barcode="${p.barcode}" data-name="${p.name}" data-image="${p.image_url || ''}">
+                            <div class="flex items-center gap-2">
+                                ${p.image_url ? `<img src="${p.image_url}" class="w-8 h-8 object-cover rounded">` : '<div class="w-8 h-8 bg-gray-600 rounded"></div>'}
+                                <div><span class="font-mono text-xs">${p.barcode}</span><br>${p.name}</div>
+                            </div>
+                            <span class="text-yellow-400">Select</span>
+                        </div>
+                    `).join('');
+                    resultsDiv.classList.remove('hidden');
+                    addForm.classList.add('hidden');
+                    document.querySelectorAll('.select-product').forEach(el => {
+                        el.addEventListener('click', () => {
+                            const barcode = el.dataset.barcode;
+                            const name = el.dataset.name;
+                            const image = el.dataset.image;
+                            document.getElementById('selectedBarcode').value = barcode;
+                            document.getElementById('selectedProductPreview').innerHTML = `
+                                ${image ? `<img src="${image}" class="w-12 h-12 object-cover rounded">` : '<div class="w-12 h-12 bg-gray-600 rounded"></div>'}
+                                <div><strong>${name}</strong><br><span class="text-xs">${barcode}</span></div>
+                            `;
+                            document.getElementById('newPriceRand').value = '';
+                            addForm.classList.remove('hidden');
+                            resultsDiv.classList.add('hidden');
+                        });
+                    });
+                });
+            });
+            document.getElementById('browseCatalogBtn').addEventListener('click', async () => {
+                const res = await fetch('/merchant/api/search-global?q=');
+                const allProducts = await res.json();
+                if (!allProducts.length) { alert('No products in global catalog.'); return; }
+                const modal = document.createElement('div');
+                modal.className = 'modal';
+                modal.innerHTML = `
+                    <div class="modal-content bg-gray-900 rounded-lg p-4">
+                        <div class="flex justify-between items-center mb-3">
+                            <h3 class="font-bold text-yellow-400">Global Product Catalog</h3>
+                            <button class="close-modal text-white text-2xl">&times;</button>
+                        </div>
+                        <div class="max-h-96 overflow-y-auto space-y-2">
+                            ${allProducts.map(p => `
+                                <div class="bg-gray-800 p-2 rounded flex justify-between items-center">
+                                    <div class="flex items-center gap-2">
+                                        ${p.image_url ? `<img src="${p.image_url}" class="w-10 h-10 object-cover rounded">` : '<div class="w-10 h-10 bg-gray-700 rounded"></div>'}
+                                        <div><div class="font-semibold">${p.name}</div><div class="text-xs text-gray-400">${p.barcode}</div></div>
+                                    </div>
+                                    <button class="add-global-product bg-yellow-600 text-black px-2 py-1 rounded text-sm" data-barcode="${p.barcode}" data-name="${p.name}" data-image="${p.image_url || ''}">Add to Store</button>
+                                </div>
+                            `).join('')}
+                        </div>
+                    </div>
+                `;
+                document.body.appendChild(modal);
+                modal.querySelector('.close-modal').addEventListener('click', () => modal.remove());
+                modal.addEventListener('click', (e) => { if (e.target === modal) modal.remove(); });
+                document.querySelectorAll('.add-global-product').forEach(btn => {
+                    btn.addEventListener('click', () => {
+                        const barcode = btn.dataset.barcode;
+                        const name = btn.dataset.name;
+                        const image = btn.dataset.image;
+                        const priceRand = prompt(`Enter price for ${name} (in Rands):`);
+                        if (priceRand && !isNaN(parseFloat(priceRand))) {
+                            const priceCents = Math.round(parseFloat(priceRand) * 100);
+                            fetch('/merchant/api/product', {
+                                method: 'POST',
+                                headers: { 'Content-Type': 'application/json' },
+                                body: JSON.stringify({ barcode, price: priceCents, stock: 999 })
+                            }).then(() => { modal.remove(); loadProducts(); });
+                        }
+                    });
+                });
+            });
+            document.getElementById('confirmAddBtn')?.addEventListener('click', () => {
+                const barcode = document.getElementById('selectedBarcode').value;
+                const priceRand = document.getElementById('newPriceRand').value;
+                if(!barcode || !priceRand) return alert('Select a product and enter a price');
+                const priceCents = Math.round(parseFloat(priceRand) * 100);
+                fetch('/merchant/api/product', {
+                    method: 'POST',
+                    headers: { 'Content-Type': 'application/json' },
+                    body: JSON.stringify({ barcode, price: priceCents, stock: 999 })
+                }).then(()=> { loadProducts(); });
+            });
+        }
+
+        function attachCustomHandlers() {
+            document.getElementById('createCustomBtn').addEventListener('click', () => {
+                const name = document.getElementById('customName').value.trim();
+                const priceRand = document.getElementById('customPriceRand').value.trim();
+                if (!name || !priceRand) return alert('Name and price required');
+                const priceCents = Math.round(parseFloat(priceRand) * 100);
+                const desc = document.getElementById('customDesc').value.trim();
+                const image = document.getElementById('customImage').value.trim();
+                fetch('/merchant/api/custom-products', {
+                    method: 'POST',
+                    headers: { 'Content-Type': 'application/json' },
+                    body: JSON.stringify({ name, description: desc, price_cents: priceCents, image_url: image })
+                }).then(() => {
+                    document.getElementById('customName').value = '';
+                    document.getElementById('customDesc').value = '';
+                    document.getElementById('customPriceRand').value = '';
+                    document.getElementById('customImage').value = '';
+                    loadProducts();
+                });
+            });
+            document.querySelectorAll('.download-custom-qr').forEach(btn => {
+                btn.addEventListener('click', () => {
+                    const token = btn.dataset.token;
+                    const name = btn.dataset.name;
+                    const qrUrl = `https://api.qrserver.com/v1/create-qr-code/?size=200x200&data=${encodeURIComponent(token)}`;
+                    const link = document.createElement('a');
+                    link.href = qrUrl;
+                    link.download = `qr_${name}.png`;
+                    link.click();
+                });
+            });
+            document.querySelectorAll('.copy-custom-token').forEach(btn => {
+                btn.addEventListener('click', () => {
+                    const token = btn.dataset.token;
+                    navigator.clipboard.writeText(token);
+                    alert('Product token copied to clipboard. Share this with customers to scan as a QR code text.');
+                });
+            });
+            document.querySelectorAll('.edit-custom').forEach(btn => {
+                btn.addEventListener('click', () => {
+                    const id = btn.dataset.id;
+                    const oldName = btn.dataset.name;
+                    const oldDesc = btn.dataset.desc;
+                    const oldPriceCents = parseInt(btn.dataset.price);
+                    const oldPriceRand = (oldPriceCents/100).toFixed(2);
+                    const oldImage = btn.dataset.image;
+                    const newName = prompt('New name:', oldName);
+                    if (!newName) return;
+                    const newDesc = prompt('New description:', oldDesc);
+                    const newPriceRand = prompt('New price (in Rands):', oldPriceRand);
+                    if (!newPriceRand || isNaN(parseFloat(newPriceRand))) return;
+                    const newPriceCents = Math.round(parseFloat(newPriceRand) * 100);
+                    const newImage = prompt('Image URL:', oldImage);
+                    fetch(`/merchant/api/custom-products/${id}`, {
+                        method: 'PUT',
+                        headers: { 'Content-Type': 'application/json' },
+                        body: JSON.stringify({ name: newName, description: newDesc, price_cents: newPriceCents, image_url: newImage })
+                    }).then(() => loadProducts());
+                });
+            });
+            document.querySelectorAll('.delete-custom').forEach(btn => {
+                btn.addEventListener('click', () => {
+                    const id = btn.dataset.id;
+                    if (confirm('Delete this custom product?')) {
+                        fetch(`/merchant/api/custom-products/${id}`, { method: 'DELETE' }).then(() => loadProducts());
+                    }
+                });
+            });
+        }
+
+        function showTransactionDetails(transactionId) {
+            fetch(`/merchant/api/transaction/${transactionId}`)
+                .then(res => res.json())
+                .then(data => {
+                    if (!data.transaction) return alert('Transaction not found');
+                    const t = data.transaction;
+                    const items = data.items;
+                    const modal = document.createElement('div');
+                    modal.className = 'modal';
+                    modal.innerHTML = `
+                        <div class="modal-content bg-gray-900 rounded-lg p-4">
+                            <div class="flex justify-between items-center mb-3">
+                                <h3 class="font-bold text-yellow-400">Transaction Details</h3>
+                                <button class="close-modal text-white text-2xl">&times;</button>
+                            </div>
+                            <div class="space-y-2 text-sm">
+                                <p><strong>ID:</strong> ${t.id}</p>
+                                <p><strong>Customer:</strong> ${t.customer_name || 'Customer'}</p>
+                                <p><strong>Date:</strong> ${new Date(t.created_at*1000).toLocaleString()}</p>
+                                <p><strong>Status:</strong> ${t.status}</p>
+                                <p><strong>Total:</strong> R${(t.total_cents/100).toFixed(2)}</p>
+                                <div class="border-t border-gray-700 pt-2">
+                                    <strong>Items:</strong>
+                                    <div class="mt-1 space-y-1">
+                                        ${items.map(i => `
+                                            <div class="flex items-center gap-2">
+                                                ${i.image_url ? `<img src="${i.image_url}" class="w-6 h-6 object-cover rounded">` : '<div class="w-6 h-6 bg-gray-700 rounded"></div>'}
+                                                <span>${i.name} x${i.quantity} = R${(i.price_cents*i.quantity/100).toFixed(2)}</span>
+                                            </div>
+                                        `).join('')}
+                                    </div>
+                                </div>
+                            </div>
+                        </div>
+                    `;
+                    document.body.appendChild(modal);
+                    modal.querySelector('.close-modal').addEventListener('click', () => modal.remove());
+                    modal.addEventListener('click', (e) => { if (e.target === modal) modal.remove(); });
+                });
+        }
+
+        function loadReports() {
+            Promise.all([
+                fetch('/merchant/api/revenue').then(r=>r.json()),
+                fetch('/merchant/api/transactions').then(r=>r.json()),
+                fetch('/merchant/api/complaints').then(r=>r.json())
+            ]).then(([revenue, transactions, complaints]) => {
+                document.getElementById('mainContent').innerHTML = `
+                    <div>
+                        <h2 class="font-bold text-yellow-400 mb-2">Revenue</h2>
+                        <div class="grid grid-cols-3 gap-2 mb-4">
+                            <div class="bg-gray-800 p-2 rounded text-center"><div class="text-xs">Today</div><div class="font-bold">R${(revenue.today/100).toFixed(2)}</div></div>
+                            <div class="bg-gray-800 p-2 rounded text-center"><div class="text-xs">This Month</div><div class="font-bold">R${(revenue.this_month/100).toFixed(2)}</div></div>
+                            <div class="bg-gray-800 p-2 rounded text-center"><div class="text-xs">Total</div><div class="font-bold">R${(revenue.total/100).toFixed(2)}</div></div>
+                        </div>
+                        <h3 class="font-semibold mt-4">Recent Transactions</h3>
+                        <div id="txnList" class="text-sm max-h-40 overflow-y-auto"></div>
+                        <h3 class="font-semibold mt-4">Complaints</h3>
+                        <div id="complaintsList" class="text-sm"></div>
+                    </div>
+                `;
+                const txnHtml = transactions.map(t => `
+                    <div class="bg-gray-800 p-2 rounded mb-1 cursor-pointer hover:bg-gray-700 transaction-item" data-id="${t.id}">
+                        R${(t.total_cents/100).toFixed(2)} - ${t.customer_name} - ${new Date(t.created_at*1000).toLocaleString()}
+                    </div>
+                `).join('');
+                document.getElementById('txnList').innerHTML = txnHtml || 'No transactions';
+                document.querySelectorAll('.transaction-item').forEach(el => {
+                    el.addEventListener('click', () => showTransactionDetails(el.dataset.id));
+                });
+                const compHtml = complaints.map(c => `<div class="bg-gray-800 p-2 rounded mb-2"><b>${c.customer_name}</b>: ${c.message}<br><span class="text-xs text-gray-400">${new Date(c.created_at*1000).toLocaleString()}</span> ${c.resolved ? '✅ Resolved' : '⏳ Pending'}</div>`).join('');
+                document.getElementById('complaintsList').innerHTML = compHtml || 'No complaints';
+            });
+        }
+
+        const tabs = ['qr', 'verify', 'products', 'reports'];
+        document.querySelectorAll('.tab-btn').forEach(btn => {
+            btn.addEventListener('click', () => {
+                const tab = btn.dataset.tab;
+                currentTab = tab;
+                if(tab === 'qr') loadQR();
+                else if(tab === 'verify') loadVerify();
+                else if(tab === 'products') loadProducts();
+                else if(tab === 'reports') loadReports();
+                document.querySelectorAll('.tab-btn').forEach(b => b.classList.remove('active', 'text-yellow-400'));
+                btn.classList.add('active', 'text-yellow-400');
+            });
+        });
+        loadQR();
+        document.querySelector('.tab-btn[data-tab="qr"]').classList.add('active', 'text-yellow-400');
+    </script>
+</body>
+</html>

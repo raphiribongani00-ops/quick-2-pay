@@ -1,0 +1,294 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Admin Dashboard - Quick 2 Pay</title>
+    <script src="https://cdn.tailwindcss.com"></script>
+    <style>
+        .sidebar-item.active { background-color: #eab308; color: black; }
+        .modal {
+            position: fixed;
+            top: 0;
+            left: 0;
+            right: 0;
+            bottom: 0;
+            background: rgba(0,0,0,0.8);
+            display: flex;
+            align-items: center;
+            justify-content: center;
+            z-index: 50;
+        }
+        .modal-content {
+            max-height: 80vh;
+            overflow-y: auto;
+            width: 90%;
+            max-width: 500px;
+        }
+    </style>
+</head>
+<body class="bg-black text-white">
+    <div class="bg-gray-900 border-b border-gray-800 fixed top-0 left-0 right-0 z-10">
+        <div class="flex justify-between items-center px-4 py-3 max-w-7xl mx-auto">
+            <h1 class="text-xl font-bold text-yellow-400">Quick 2 Pay Admin</h1>
+            <a href="/admin/logout" class="text-sm bg-gray-800 px-3 py-1 rounded">Logout</a>
+        </div>
+    </div>
+    <div class="flex pt-16">
+        <div class="w-64 bg-gray-900 min-h-screen fixed left-0 top-16 overflow-y-auto">
+            <nav class="mt-4">
+                <button data-section="products" class="sidebar-item w-full text-left px-4 py-2 hover:bg-gray-800">📦 Products</button>
+                <button data-section="merchants" class="sidebar-item w-full text-left px-4 py-2 hover:bg-gray-800">🏪 Merchants</button>
+                <button data-section="transactions" class="sidebar-item w-full text-left px-4 py-2 hover:bg-gray-800">💰 Transactions</button>
+                <button data-section="invoices" class="sidebar-item w-full text-left px-4 py-2 hover:bg-gray-800">📄 Invoices</button>
+                <button data-section="complaints" class="sidebar-item w-full text-left px-4 py-2 hover:bg-gray-800">⚠️ Complaints</button>
+                <button data-section="reports" class="sidebar-item w-full text-left px-4 py-2 hover:bg-gray-800">📊 Reports</button>
+            </nav>
+        </div>
+        <div class="ml-64 flex-1 p-6">
+            <div id="productsSection" class="section">
+                <h2 class="text-2xl font-bold mb-4">Global Products</h2>
+                <div class="bg-gray-900 p-4 rounded-lg mb-6">
+                    <h3 class="font-semibold mb-3">Add New Product</h3>
+                    <div class="grid grid-cols-1 md:grid-cols-3 gap-3">
+                        <input type="text" id="newBarcode" placeholder="Barcode" class="bg-gray-800 p-2 rounded">
+                        <input type="text" id="newName" placeholder="Product Name" class="bg-gray-800 p-2 rounded">
+                        <input type="text" id="newImageUrl" placeholder="Image URL (optional)" class="bg-gray-800 p-2 rounded">
+                        <button id="submitProductBtn" class="bg-yellow-500 text-black px-4 py-2 rounded">Add Product</button>
+                    </div>
+                    <div id="productFormError" class="text-red-400 text-sm mt-2 hidden"></div>
+                </div>
+                <div id="productsList" class="space-y-2"></div>
+            </div>
+            <div id="merchantsSection" class="section hidden">
+                <h2 class="text-2xl font-bold mb-4">Merchants</h2>
+                <div id="merchantsList" class="space-y-2"></div>
+            </div>
+            <div id="transactionsSection" class="section hidden">
+                <h2 class="text-2xl font-bold mb-4">All Transactions</h2>
+                <div id="transactionsList" class="space-y-2"></div>
+            </div>
+            <div id="invoicesSection" class="section hidden">
+                <h2 class="text-2xl font-bold mb-4">Invoices</h2>
+                <button id="createInvoiceBtn" class="bg-yellow-500 text-black px-4 py-2 rounded mb-4">Create Invoice</button>
+                <div id="invoicesList" class="space-y-2"></div>
+            </div>
+            <div id="complaintsSection" class="section hidden">
+                <h2 class="text-2xl font-bold mb-4">Complaints</h2>
+                <div id="complaintsList" class="space-y-2"></div>
+            </div>
+            <div id="reportsSection" class="section hidden">
+                <h2 class="text-2xl font-bold mb-4">Platform Reports</h2>
+                <div id="reportsData" class="bg-gray-900 p-4 rounded"></div>
+            </div>
+        </div>
+    </div>
+
+    <script>
+        let currentSection = 'products';
+
+        function showSection(section) {
+            document.querySelectorAll('.section').forEach(el => el.classList.add('hidden'));
+            document.getElementById(`${section}Section`).classList.remove('hidden');
+            document.querySelectorAll('.sidebar-item').forEach(el => el.classList.remove('active'));
+            document.querySelector(`[data-section="${section}"]`).classList.add('active');
+            currentSection = section;
+            if (section === 'products') loadProducts();
+            if (section === 'merchants') loadMerchants();
+            if (section === 'transactions') loadTransactions();
+            if (section === 'invoices') loadInvoices();
+            if (section === 'complaints') loadComplaints();
+            if (section === 'reports') loadReports();
+        }
+
+        function showModal(contentHtml) {
+            const modal = document.createElement('div');
+            modal.className = 'modal';
+            modal.innerHTML = `
+                <div class="modal-content bg-gray-900 rounded-lg p-4">
+                    <div class="flex justify-between items-center mb-3">
+                        <h3 class="font-bold text-yellow-400">Details</h3>
+                        <button class="close-modal text-white text-2xl">&times;</button>
+                    </div>
+                    ${contentHtml}
+                </div>
+            `;
+            document.body.appendChild(modal);
+            modal.querySelector('.close-modal').addEventListener('click', () => modal.remove());
+            modal.addEventListener('click', (e) => { if (e.target === modal) modal.remove(); });
+        }
+
+        // Products
+        async function loadProducts() {
+            const res = await fetch('/admin/api/products');
+            const products = await res.json();
+            const container = document.getElementById('productsList');
+            if (products.length === 0) { container.innerHTML = '<div class="text-gray-500">No products yet.</div>'; return; }
+            container.innerHTML = products.map(p => `
+                <div class="bg-gray-800 p-3 rounded flex justify-between items-center">
+                    <div class="flex items-center gap-3">
+                        ${p.image_url ? `<img src="${p.image_url}" class="w-10 h-10 object-cover rounded">` : '<div class="w-10 h-10 bg-gray-700 rounded"></div>'}
+                        <div><span class="font-mono text-xs bg-gray-700 px-2 py-1 rounded">${p.barcode}</span><br><span class="font-semibold">${p.name}</span></div>
+                    </div>
+                    <div><button class="edit-product bg-blue-700 px-2 py-1 rounded text-sm" data-barcode="${p.barcode}" data-name="${p.name}" data-image="${p.image_url || ''}">Edit</button>
+                    <button class="delete-product bg-red-700 px-2 py-1 rounded text-sm" data-barcode="${p.barcode}">Delete</button></div>
+                </div>
+            `).join('');
+            document.querySelectorAll('.delete-product').forEach(btn => btn.addEventListener('click', async () => {
+                if (!confirm('Delete this product?')) return;
+                await fetch(`/admin/api/products/${btn.dataset.barcode}`, { method: 'DELETE' });
+                loadProducts();
+            }));
+            document.querySelectorAll('.edit-product').forEach(btn => btn.addEventListener('click', () => {
+                const barcode = btn.dataset.barcode;
+                const newName = prompt('Edit product name:', btn.dataset.name);
+                const newImage = prompt('Edit image URL:', btn.dataset.image);
+                if (newName) fetch(`/admin/api/products/${barcode}`, { method: 'PUT', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ name: newName, image_url: newImage }) }).then(() => loadProducts());
+            }));
+        }
+
+        document.getElementById('submitProductBtn').addEventListener('click', async () => {
+            const barcode = document.getElementById('newBarcode').value.trim();
+            const name = document.getElementById('newName').value.trim();
+            const image_url = document.getElementById('newImageUrl').value.trim();
+            if (!barcode || !name) return document.getElementById('productFormError').innerText = 'Barcode and Name required';
+            const res = await fetch('/admin/api/products', { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ barcode, name, image_url }) });
+            if (res.ok) { document.getElementById('newBarcode').value = ''; document.getElementById('newName').value = ''; document.getElementById('newImageUrl').value = ''; loadProducts(); }
+            else { const err = await res.json(); document.getElementById('productFormError').innerText = err.error; }
+        });
+
+        // Merchants – clickable
+        async function loadMerchants() {
+            const res = await fetch('/admin/api/merchants');
+            const merchants = await res.json();
+            const container = document.getElementById('merchantsList');
+            if (merchants.length === 0) { container.innerHTML = '<div class="text-gray-500">No merchants.</div>'; return; }
+            container.innerHTML = merchants.map(m => `
+                <div class="bg-gray-800 p-3 rounded flex justify-between items-center cursor-pointer hover:bg-gray-700 merchant-item" data-id="${m.id}" data-name="${m.store_name}">
+                    <div><strong>${m.store_name}</strong><br>${m.email}<br><span class="text-xs">QR: ${m.store_qr_code}</span></div>
+                    <div><button class="delete-merchant bg-red-700 px-2 py-1 rounded text-sm" data-id="${m.id}">Delete</button></div>
+                </div>
+            `).join('');
+            document.querySelectorAll('.delete-merchant').forEach(btn => btn.addEventListener('click', async (e) => { e.stopPropagation(); if(confirm('Delete?')) await fetch(`/admin/api/merchants/${btn.dataset.id}`, { method: 'DELETE' }); loadMerchants(); }));
+            document.querySelectorAll('.merchant-item').forEach(el => {
+                el.addEventListener('click', async () => {
+                    const merchantId = el.dataset.id;
+                    const storeName = el.dataset.name;
+                    const [productsRes, customersRes] = await Promise.all([
+                        fetch(`/admin/api/merchant-products/${merchantId}`),
+                        fetch(`/admin/api/merchant-customers/${merchantId}`)
+                    ]);
+                    const products = await productsRes.json();
+                    const customerCount = await customersRes.json();
+                    const productsHtml = products.map(p => `
+                        <div class="flex justify-between items-center border-b border-gray-700 py-1">
+                            <div class="flex items-center gap-2">
+                                ${p.image_url ? `<img src="${p.image_url}" class="w-8 h-8 object-cover rounded">` : '<div class="w-8 h-8 bg-gray-700 rounded"></div>'}
+                                <span>${p.name}</span>
+                            </div>
+                            <span>R${(p.price/100).toFixed(2)}</span>
+                            <span>Stock: ${p.stock}</span>
+                        </div>
+                    `).join('');
+                    showModal(`
+                        <h3 class="text-lg font-bold mb-2">${storeName}</h3>
+                        <p><strong>Customers served:</strong> ${customerCount.count}</p>
+                        <div class="mt-3"><strong>Products:</strong></div>
+                        <div class="max-h-60 overflow-y-auto">${productsHtml || '<p>No products</p>'}</div>
+                    `);
+                });
+            });
+        }
+
+        // Transactions – clickable
+        async function loadTransactions() {
+            const res = await fetch('/admin/api/transactions');
+            const txns = await res.json();
+            const container = document.getElementById('transactionsList');
+            container.innerHTML = txns.map(t => `
+                <div class="bg-gray-800 p-2 rounded text-sm flex justify-between flex-wrap cursor-pointer hover:bg-gray-700 transaction-item" data-id="${t.id}">
+                    <span>${t.store_name}</span>
+                    <span>R${(t.total_cents/100).toFixed(2)}</span>
+                    <span>${t.customer_name}</span>
+                    <span class="text-gray-400">${new Date(t.created_at*1000).toLocaleString()}</span>
+                    <span>${t.status}</span>
+                </div>
+            `).join('');
+            document.querySelectorAll('.transaction-item').forEach(el => {
+                el.addEventListener('click', async () => {
+                    const txId = el.dataset.id;
+                    const itemsRes = await fetch(`/admin/api/transaction-items/${txId}`);
+                    const items = await itemsRes.json();
+                    const itemsHtml = items.map(i => `
+                        <div class="flex items-center gap-2 border-b border-gray-700 py-1">
+                            ${i.image_url ? `<img src="${i.image_url}" class="w-8 h-8 object-cover rounded">` : '<div class="w-8 h-8 bg-gray-700 rounded"></div>'}
+                            <div>${i.name} x${i.quantity} = R${(i.price_cents*i.quantity/100).toFixed(2)}</div>
+                        </div>
+                    `).join('');
+                    showModal(`
+                        <h3 class="text-lg font-bold mb-2">Transaction Items</h3>
+                        <div class="max-h-60 overflow-y-auto">${itemsHtml || '<p>No items</p>'}</div>
+                    `);
+                });
+            });
+        }
+
+        // Invoices
+        async function loadInvoices() {
+            const res = await fetch('/admin/api/invoices');
+            const invoices = await res.json();
+            const container = document.getElementById('invoicesList');
+            container.innerHTML = invoices.map(i => `
+                <div class="bg-gray-800 p-2 rounded flex justify-between items-center">
+                    <div><strong>${i.store_name}</strong><br>Fee: R${(i.total_platform_fee_cents/100).toFixed(2)} | Payout: R${(i.payout_amount_cents/100).toFixed(2)}</div>
+                    <div>${i.paid ? '✅ Paid' : `<button class="mark-paid bg-green-700 px-2 py-1 rounded" data-id="${i.id}">Mark Paid</button>`}</div>
+                </div>
+            `).join('');
+            document.querySelectorAll('.mark-paid').forEach(btn => btn.addEventListener('click', async () => { await fetch(`/admin/api/invoices/${btn.dataset.id}/pay`, { method: 'POST' }); loadInvoices(); }));
+        }
+
+        document.getElementById('createInvoiceBtn')?.addEventListener('click', async () => {
+            const merchantId = prompt('Merchant user ID');
+            if(!merchantId) return;
+            const fee = prompt('Platform fee in Rands (e.g., 50 for R50.00)');
+            const payout = prompt('Payout amount in Rands');
+            if (!fee || !payout) return;
+            const feeCents = Math.round(parseFloat(fee) * 100);
+            const payoutCents = Math.round(parseFloat(payout) * 100);
+            const now = Math.floor(Date.now()/1000);
+            await fetch('/admin/api/invoices', { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ merchant_id: merchantId, period_start: now-30*86400, period_end: now, total_platform_fee_cents: feeCents, payout_amount_cents: payoutCents }) });
+            loadInvoices();
+        });
+
+        // Complaints
+        async function loadComplaints() {
+            const res = await fetch('/admin/api/complaints');
+            const complaints = await res.json();
+            const container = document.getElementById('complaintsList');
+            container.innerHTML = complaints.map(c => `
+                <div class="bg-gray-800 p-2 rounded">
+                    <div><strong>${c.store_name}</strong> from <strong>${c.customer_name}</strong></div>
+                    <div>${c.message}</div>
+                    <div class="text-xs">${new Date(c.created_at*1000).toLocaleString()}</div>
+                    ${!c.resolved ? `<button class="resolve-complaint bg-green-700 px-2 py-1 rounded text-sm" data-id="${c.id}">Resolve</button>` : '<span class="text-green-400">Resolved</span>'}
+                </div>
+            `).join('');
+            document.querySelectorAll('.resolve-complaint').forEach(btn => btn.addEventListener('click', async () => { await fetch(`/admin/api/complaints/${btn.dataset.id}/resolve`, { method: 'POST' }); loadComplaints(); }));
+        }
+
+        // Reports
+        async function loadReports() {
+            const res = await fetch('/admin/api/reports/platform-revenue');
+            const data = await res.json();
+            document.getElementById('reportsData').innerHTML = `
+                <p>Total Volume: R${((data.total_volume||0)/100).toFixed(2)}</p>
+                <p>Total Transactions: ${data.total_transactions||0}</p>
+                <p>Average Transaction: R${((data.avg_transaction||0)/100).toFixed(2)}</p>
+            `;
+        }
+
+        document.querySelectorAll('.sidebar-item').forEach(btn => btn.addEventListener('click', () => showSection(btn.dataset.section)));
+        showSection('products');
+    </script>
+</body>
+</html>

@@ -1,0 +1,110 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0, user-scalable=yes">
+    <title>Add More Items - Quick 2 Pay</title>
+    <script src="https://cdn.tailwindcss.com"></script>
+    <script src="https://unpkg.com/html5-qrcode@2.3.8/html5-qrcode.min.js"></script>
+</head>
+<body class="bg-black text-white">
+    <div class="container mx-auto max-w-md p-4">
+        <h1 class="text-2xl font-bold text-yellow-400 mb-4">Add More Items</h1>
+        <div class="bg-gray-900 rounded-lg p-4 mb-4">
+            <div class="flex justify-between items-center mb-2">
+                <span class="font-semibold">Store: <span id="storeName"></span></span>
+            </div>
+            <button id="startCameraBtn" class="bg-yellow-600 w-full py-2 rounded mb-2">Start Camera Scanner</button>
+            <div id="scannerContainer" class="hidden mt-2"></div>
+            <div class="mt-2">
+                <input type="text" id="manualBarcode" placeholder="Or type barcode number" class="w-full p-2 rounded bg-gray-800 text-sm">
+                <button id="manualAddBtn" class="bg-gray-700 text-white px-3 py-1 rounded text-sm mt-1">Add Item</button>
+            </div>
+            <div class="mt-4 border-t border-gray-700 pt-2">
+                <div class="flex justify-between font-bold">
+                    <span>Current Cart Total:</span>
+                    <span id="cartTotal">$0.00</span>
+                </div>
+                <div id="cartItemsSummary" class="text-xs text-gray-400 mt-1 space-y-1"></div>
+            </div>
+        </div>
+        <div class="flex gap-2">
+            <a href="/customer/cart" class="flex-1 bg-yellow-500 text-black text-center py-2 rounded font-semibold">Return to Cart</a>
+        </div>
+    </div>
+
+    <script>
+        let currentMerchantId = sessionStorage.getItem('checkoutMerchantId');
+        let cart = JSON.parse(sessionStorage.getItem('checkoutCart') || '[]');
+
+        fetch('/customer/api/verify-merchant', {
+            method: 'POST',
+            headers: { 'Content-Type': 'application/json' },
+            body: JSON.stringify({ qrData: currentMerchantId })
+        }).then(res => res.json()).then(data => {
+            if (data.success) document.getElementById('storeName').innerText = data.storeName;
+        });
+
+        function updateCartSummary() {
+            let total = cart.reduce((sum, i) => sum + (i.price * i.quantity), 0);
+            document.getElementById('cartTotal').innerText = `$${(total/100).toFixed(2)}`;
+            let summaryHtml = cart.map(i => `
+                <div class="flex items-center gap-2">
+                    ${i.image_url ? `<img src="${i.image_url}" class="w-6 h-6 object-cover rounded">` : '<div class="w-6 h-6 bg-gray-700 rounded"></div>'}
+                    <span>${i.name} x${i.quantity}</span>
+                </div>
+            `).join('');
+            document.getElementById('cartItemsSummary').innerHTML = summaryHtml || 'No items';
+            sessionStorage.setItem('checkoutCart', JSON.stringify(cart));
+        }
+
+        function addItem(barcode) {
+            fetch('/customer/api/add-item', {
+                method: 'POST',
+                headers: { 'Content-Type': 'application/json' },
+                body: JSON.stringify({ merchantId: currentMerchantId, barcode })
+            }).then(res => res.json()).then(item => {
+                if (item.success) {
+                    const existing = cart.find(i => i.barcode === item.barcode);
+                    if (existing) existing.quantity++;
+                    else cart.push({ 
+                        barcode: item.barcode, 
+                        name: item.name, 
+                        price: item.price, 
+                        quantity: 1,
+                        image_url: item.image_url
+                    });
+                    updateCartSummary();
+                    alert(`Added ${item.name}`);
+                } else {
+                    alert(item.message);
+                }
+            }).catch(err => alert('Error adding item'));
+        }
+
+        document.getElementById('manualAddBtn').addEventListener('click', () => {
+            const barcode = document.getElementById('manualBarcode').value.trim();
+            if (!barcode) return alert('Enter barcode');
+            addItem(barcode);
+            document.getElementById('manualBarcode').value = '';
+        });
+
+        let scanner = null;
+        document.getElementById('startCameraBtn').addEventListener('click', () => {
+            const container = document.getElementById('scannerContainer');
+            if (scanner) {
+                scanner.stop().then(() => { container.classList.add('hidden'); scanner = null; });
+                return;
+            }
+            container.classList.remove('hidden');
+            container.innerHTML = '<div id="itemReader" style="width:100%; height:250px;"></div>';
+            scanner = new Html5Qrcode("itemReader");
+            scanner.start({ facingMode: "environment" }, { fps: 10, qrbox: 250 }, (barcode) => {
+                addItem(barcode);
+            }).catch(console.error);
+        });
+
+        updateCartSummary();
+    </script>
+</body>
+</html>

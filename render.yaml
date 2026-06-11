@@ -1,0 +1,17 @@
+services:
+  - type: web
+    name: quick-2-pay
+    env: node
+    buildCommand: npm install
+    startCommand: npm start
+    envVars:
+      - key: NODE_VERSION
+        value: 18.17.0
+      - key: JWT_SECRET
+        generateValue: true
+      - key: RENDER
+        value: true
+    disk:
+      name: sqlite-data
+      mountPath: /data
+      sizeGB: 1
