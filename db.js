@@ -1,40 +1,42 @@
-const sqlite3 = require('sqlite3').verbose();
-const path = require('path');
+const { createClient } = require('@libsql/client');
+require('dotenv').config();
 
-const dbPath = process.env.DATABASE_URL || (process.env.RENDER ? '/data/database.sqlite' : './database.sqlite');
-const db = new sqlite3.Database(dbPath);
+const tursoUrl = process.env.TURSO_DATABASE_URL;
+const tursoToken = process.env.TURSO_AUTH_TOKEN;
 
-db.serialize(() => {
-  db.run(`
-    CREATE TABLE IF NOT EXISTS users (
+if (!tursoUrl || !tursoToken) {
+  console.error('❌ Missing TURSO_DATABASE_URL or TURSO_AUTH_TOKEN');
+  process.exit(1);
+}
+
+const client = createClient({
+  url: tursoUrl,
+  authToken: tursoToken,
+});
+
+// Function to create all tables
+async function createTables() {
+  const queries = [
+    `CREATE TABLE IF NOT EXISTS users (
       id TEXT PRIMARY KEY,
       email TEXT UNIQUE NOT NULL,
       password_hash TEXT NOT NULL,
-      role TEXT CHECK(role IN ('customer', 'merchant', 'admin')) NOT NULL,
+      role TEXT NOT NULL,
       name TEXT,
       created_at INTEGER DEFAULT (strftime('%s', 'now'))
-    )
-  `);
-
-  db.run(`
-    CREATE TABLE IF NOT EXISTS merchants (
+    )`,
+    `CREATE TABLE IF NOT EXISTS merchants (
       user_id TEXT PRIMARY KEY,
       store_name TEXT NOT NULL,
       store_qr_code TEXT UNIQUE NOT NULL,
       FOREIGN KEY (user_id) REFERENCES users(id) ON DELETE CASCADE
-    )
-  `);
-
-  db.run(`
-    CREATE TABLE IF NOT EXISTS global_products (
+    )`,
+    `CREATE TABLE IF NOT EXISTS global_products (
       barcode TEXT PRIMARY KEY,
       name TEXT NOT NULL,
       image_url TEXT
-    )
-  `);
-
-  db.run(`
-    CREATE TABLE IF NOT EXISTS merchant_products (
+    )`,
+    `CREATE TABLE IF NOT EXISTS merchant_products (
       merchant_id TEXT,
       barcode TEXT,
       price INTEGER NOT NULL,
@@ -42,11 +44,8 @@ db.serialize(() => {
       PRIMARY KEY (merchant_id, barcode),
       FOREIGN KEY (merchant_id) REFERENCES merchants(user_id),
       FOREIGN KEY (barcode) REFERENCES global_products(barcode)
-    )
-  `);
-
-  db.run(`
-    CREATE TABLE IF NOT EXISTS merchant_custom_products (
+    )`,
+    `CREATE TABLE IF NOT EXISTS merchant_custom_products (
       id TEXT PRIMARY KEY,
       merchant_id TEXT NOT NULL,
       name TEXT NOT NULL,
@@ -56,11 +55,8 @@ db.serialize(() => {
       qr_code_token TEXT UNIQUE NOT NULL,
       created_at INTEGER DEFAULT (strftime('%s', 'now')),
       FOREIGN KEY (merchant_id) REFERENCES merchants(user_id)
-    )
-  `);
-
-  db.run(`
-    CREATE TABLE IF NOT EXISTS transactions (
+    )`,
+    `CREATE TABLE IF NOT EXISTS transactions (
       id TEXT PRIMARY KEY,
       customer_id TEXT,
       merchant_id TEXT,
@@ -71,11 +67,8 @@ db.serialize(() => {
       completed_at INTEGER,
       FOREIGN KEY (customer_id) REFERENCES users(id),
       FOREIGN KEY (merchant_id) REFERENCES merchants(user_id)
-    )
-  `);
-
-  db.run(`
-    CREATE TABLE IF NOT EXISTS transaction_items (
+    )`,
+    `CREATE TABLE IF NOT EXISTS transaction_items (
       transaction_id TEXT,
       barcode TEXT,
       quantity INTEGER NOT NULL,
@@ -83,11 +76,8 @@ db.serialize(() => {
       PRIMARY KEY (transaction_id, barcode),
       FOREIGN KEY (transaction_id) REFERENCES transactions(id),
       FOREIGN KEY (barcode) REFERENCES global_products(barcode)
-    )
-  `);
-
-  db.run(`
-    CREATE TABLE IF NOT EXISTS complaints (
+    )`,
+    `CREATE TABLE IF NOT EXISTS complaints (
       id TEXT PRIMARY KEY,
       from_user_id TEXT,
       merchant_id TEXT,
@@ -98,11 +88,8 @@ db.serialize(() => {
       FOREIGN KEY (from_user_id) REFERENCES users(id),
       FOREIGN KEY (merchant_id) REFERENCES merchants(user_id),
       FOREIGN KEY (transaction_id) REFERENCES transactions(id)
-    )
-  `);
-
-  db.run(`
-    CREATE TABLE IF NOT EXISTS invoices (
+    )`,
+    `CREATE TABLE IF NOT EXISTS invoices (
       id TEXT PRIMARY KEY,
       merchant_id TEXT,
       period_start INTEGER,
@@ -112,10 +99,50 @@ db.serialize(() => {
       paid INTEGER DEFAULT 0,
       created_at INTEGER DEFAULT (strftime('%s', 'now')),
       FOREIGN KEY (merchant_id) REFERENCES merchants(user_id)
-    )
-  `);
+    )`
+  ];
+  for (const sql of queries) {
+    await client.execute(sql);
+  }
+  console.log('✅ Turso database tables ready');
+}
 
-  console.log('Database tables ready');
-});
+// Promise that resolves when tables are created
+const ready = createTables();
+
+// Compatibility layer (callback style)
+const db = {
+  get: (sql, params, callback) => {
+    if (typeof callback !== 'function') {
+      return client.execute({ sql, args: params }).then(result => result.rows[0]);
+    }
+    client.execute({ sql, args: params })
+      .then(result => callback(null, result.rows[0]))
+      .catch(err => callback(err, null));
+  },
+  all: (sql, params, callback) => {
+    if (typeof callback !== 'function') {
+      return client.execute({ sql, args: params }).then(result => result.rows);
+    }
+    client.execute({ sql, args: params })
+      .then(result => callback(null, result.rows))
+      .catch(err => callback(err, null));
+  },
+  run: (sql, params, callback) => {
+    if (typeof callback !== 'function') {
+      return client.execute({ sql, args: params }).then(result => ({
+        changes: result.rowsAffected,
+        lastID: result.lastInsertRowid,
+      }));
+    }
+    client.execute({ sql, args: params })
+      .then(result => callback(null, { changes: result.rowsAffected, lastID: result.lastInsertRowid }))
+      .catch(err => callback(err, null));
+  },
+  serialize: (callback) => callback(),
+};
+
+// Attach ready promise to db object (so server.js can access it)
+db.ready = ready;
 
 module.exports = db;

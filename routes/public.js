@@ -22,7 +22,7 @@ router.get('/customer/login', (req, res) => {
 });
 router.post('/customer/login', (req, res) => {
   const { email, password } = req.body;
-  db.get('SELECT * FROM users WHERE email = ? AND role = "customer"', [email], async (err, user) => {
+  db.get('SELECT * FROM users WHERE email = ? AND role = \'customer\'', [email], async (err, user) => {
     if (err || !user) return res.send('Invalid credentials');
     const match = await bcrypt.compare(password, user.password_hash);
     if (!match) return res.send('Invalid credentials');
@@ -45,7 +45,7 @@ router.post('/customer/register', async (req, res) => {
   const { email, password, name } = req.body;
   const hashed = await bcrypt.hash(password, 10);
   const id = uuidv4();
-  db.run('INSERT INTO users (id, email, password_hash, role, name) VALUES (?, ?, ?, "customer", ?)', [id, email, hashed, name], (err) => {
+  db.run('INSERT INTO users (id, email, password_hash, role, name) VALUES (?, ?, ?, \'customer\', ?)', [id, email, hashed, name], (err) => {
     if (err) return res.send('Email already exists');
     const token = auth.generateToken(id, 'customer');
     res.cookie('token', token, { httpOnly: true });
@@ -66,7 +66,7 @@ router.get('/merchant/login', (req, res) => {
 });
 router.post('/merchant/login', (req, res) => {
   const { email, password } = req.body;
-  db.get('SELECT * FROM users WHERE email = ? AND role = "merchant"', [email], async (err, user) => {
+  db.get('SELECT * FROM users WHERE email = ? AND role = \'merchant\'', [email], async (err, user) => {
     if (err || !user) return res.send('Invalid credentials');
     const match = await bcrypt.compare(password, user.password_hash);
     if (!match) return res.send('Invalid credentials');
@@ -90,7 +90,7 @@ router.post('/merchant/register', async (req, res) => {
   const hashed = await bcrypt.hash(password, 10);
   const userId = uuidv4();
   const storeQr = uuidv4();
-  db.run('INSERT INTO users (id, email, password_hash, role, name) VALUES (?, ?, ?, "merchant", ?)', [userId, email, hashed, store_name], (err) => {
+  db.run('INSERT INTO users (id, email, password_hash, role, name) VALUES (?, ?, ?, \'merchant\', ?)', [userId, email, hashed, store_name], (err) => {
     if (err) return res.send('Email already exists');
     db.run('INSERT INTO merchants (user_id, store_name, store_qr_code) VALUES (?, ?, ?)', [userId, store_name, storeQr], (err2) => {
       if (err2) return res.send('Error creating merchant');
@@ -114,7 +114,7 @@ router.get('/admin/login', (req, res) => {
 });
 router.post('/admin/login', (req, res) => {
   const { email, password } = req.body;
-  db.get('SELECT * FROM users WHERE email = ? AND role = "admin"', [email], async (err, user) => {
+  db.get('SELECT * FROM users WHERE email = ? AND role = \'admin\'', [email], async (err, user) => {
     if (err || !user) return res.send('Invalid admin credentials');
     const match = await bcrypt.compare(password, user.password_hash);
     if (!match) return res.send('Invalid credentials');
@@ -128,16 +128,5 @@ router.post('/admin/login', (req, res) => {
 router.get('/customer/logout', (req, res) => { res.clearCookie('token'); res.redirect('/'); });
 router.get('/merchant/logout', (req, res) => { res.clearCookie('token'); res.redirect('/'); });
 router.get('/admin/logout', (req, res) => { res.clearCookie('token'); res.redirect('/'); });
-
-// ============ SEED ADMIN ============
-(async () => {
-  db.get('SELECT * FROM users WHERE role = "admin"', async (err, admin) => {
-    if (!admin) {
-      const hashed = await bcrypt.hash('admin123', 10);
-      db.run('INSERT INTO users (id, email, password_hash, role, name) VALUES (?, ?, ?, "admin", ?)', [uuidv4(), 'admin@quick2pay.com', hashed, 'Super Admin']);
-      console.log('Default admin created: admin@quick2pay.com / admin123');
-    }
-  });
-})();
 
 module.exports = router;
